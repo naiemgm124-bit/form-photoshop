@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Form Photoshop (Auto Face Center)</title>
+
+<!-- Face API -->
+<script defer src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+<style>
+body{
+    font-family: Arial, sans-serif;
+    background:#f2f2f2;
+    text-align:center;
+}
+.box{
+    background:#fff;
+    width:380px;
+    margin:20px auto;
+    padding:15px;
+    border-radius:8px;
+    box-shadow:0 0 8px #bbb;
+}
+input, button{
+    width:90%;
+    margin:6px 0;
+    padding:6px;
+}
+button{
+    width:45%;
+    cursor:pointer;
+}
+canvas{
+    border:1px solid #aaa;
+    margin-top:10px;
+}
+.status{
+    font-size:13px;
+    color:#444;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Form Photoshop (Auto Face Detect)</h2>
+
+<div class="box">
+
+<input type="file" id="imgInput" accept="image/jpeg">
+
+<button onclick="preset(300,300,100)">Photo 300×300</button>
+<button onclick="preset(300,80,60)">Signature 300×80</button>
+
+<input id="w" type="number" value="300">
+<input id="h" type="number" value="300">
+<input id="kb" type="number" value="100">
+
+<p class="status" id="status">Loading AI model...</p>
+
+<canvas id="canvas"></canvas>
+
+<button onclick="apply()">Apply & Preview</button>
+<button onclick="download()">Download</button>
+
+</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const statusEl = document.getElementById("status");
+
+let img = new Image();
+let imgLoaded = false;
+let finalData = null;
+let faceBox = null;
+
+// Load face model
+Promise.all([
+  faceapi.nets.tinyFaceDetector.loadFromUri(
+    'https://unpkg.com/face-api.js@0.22.2/weights'
+  )
+]).then(() => {
+  statusEl.innerText = "AI ready ✔ Upload image";
+});
+
+document.getElementById("imgInput").onchange = e=>{
+    const file = e.target.files[0];
+    if(!file) return;
+
+    img.onload = async ()=>{
+        imgLoaded = true;
+        statusEl.innerText = "Detecting face...";
+        await detectFace();
+        apply();
+    };
+    img.src = URL.createObjectURL(file);
+};
+
+async function detectFace(){
+    const tempCanvas = document.createElement("canvas");
+    tempCanvas.width = img.width;
+    tempCanvas.height = img.height;
+    tempCanvas.getContext("2d").drawImage(img,0,0);
+
+    const detection = await faceapi.detectSingleFace(
+        tempCanvas,
+        new faceapi.TinyFaceDetectorOptions()
+    );
+
+    if(detection){
+        faceBox = detection.box;
+        statusEl.innerText = "Face detected ✔";
+    }else{
+        faceBox = null;
+        statusEl.innerText = "No face detected (center crop used)";
+    }
+}
+
+function preset(w,h,kb){
+    document.getElementById("w").value=w;
+    document.getElementById("h").value=h;
+    document.getElementById("kb").value=kb;
+    if(imgLoaded) apply();
+}
+
+function apply(){
+    if(!imgLoaded) return;
+
+    const w = +document.getElementById("w").value;
+    const h = +document.getElementById("h").value;
+
+    canvas.width = w;
+    canvas.height = h;
+
+    let sx=0, sy=0, sw=img.width, sh=img.height;
+
+    if(faceBox){
+        const cx = faceBox.x + faceBox.width/2;
+        const cy = faceBox.y + faceBox.height/2;
+
+        const scale = Math.max(w/img.width, h/img.height);
+        sw = w / scale;
+        sh = h / scale;
+
+        sx = Math.max(0, cx - sw/2);
+        sy = Math.max(0, cy - sh/2);
+
+        if(sx+sw > img.width) sx = img.width - sw;
+        if(sy+sh > img.height) sy = img.height - sh;
+    }
+
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+
+    autoEnhance();
+    compressHighQuality();
+}
+
+function autoEnhance(){
+    let imgData = ctx.getImageData(0,0,canvas.width,canvas.height);
+    let d = imgData.data;
+
+    let total = 0;
+    for(let i=0;i<d.length;i+=4){
+        total += (d[i]+d[i+1]+d[i+2])/3;
+    }
+    let avg = total/(d.length/4);
+    let brightness = 128 - avg;
+    let contrast = 1.1;
+
+    for(let i=0;i<d.length;i+=4){
+        d[i]   = (((d[i]+brightness)/255-0.5)*contrast+0.5)*255;
+        d[i+1] = (((d[i+1]+brightness)/255-0.5)*contrast+0.5)*255;
+        d[i+2] = (((d[i+2]+brightness)/255-0.5)*contrast+0.5)*255;
+    }
+    ctx.putImageData(imgData,0,0);
+}
+
+function compressHighQuality(){
+    const maxKB = +document.getElementById("kb").value;
+    let q = 1.0;
+    let data = canvas.toDataURL("image/jpeg", q);
+
+    while(data.length/1024 > maxKB && q > 0.4){
+        q -= 0.03;
+        data = canvas.toDataURL("image/jpeg", q);
+    }
+    finalData = data;
+}
+
+function download(){
+    if(!finalData){
+        alert("Apply & Preview first");
+        return;
+    }
+    const a = document.createElement("a");
+    a.href = finalData;
+    a.download = "final.jpg";
+    a.click();
+}
+</script>
+
+</body>
+</html>
