@@ -2,49 +2,37 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Form Photoshop</title>
+<title>Form Photoshop (Auto Face Detect)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
 <style>
-body{
-  font-family: serif;
-  background:#f2f2f2;
-}
+body{font-family:serif;background:#f2f2f2}
 .container{
-  max-width:420px;
-  margin:20px auto;
-  background:#fff;
-  padding:15px;
-  border-radius:10px;
-  box-shadow:0 0 10px rgba(0,0,0,.15);
+  max-width:420px;margin:20px auto;background:#fff;
+  padding:15px;border-radius:10px;
+  box-shadow:0 0 10px rgba(0,0,0,.15)
 }
-h2{text-align:center;}
-input,button{
-  width:100%;
-  margin:6px 0;
-  padding:8px;
-  font-size:16px;
-}
-canvas{
-  width:100%;
-  border:1px solid #ccc;
-  margin-top:10px;
-}
-.buttons{
-  display:flex;
-  gap:10px;
-}
+h2{text-align:center}
+input,button{width:100%;padding:8px;margin:6px 0;font-size:16px}
+canvas{width:100%;border:1px solid #ccc;margin-top:10px}
+.buttons{display:flex;gap:10px}
+small{display:block;text-align:center;color:#666}
 </style>
 </head>
-<body>
 
+<body>
 <div class="container">
 <h2>Form Photoshop</h2>
 
 <input type="file" id="file" accept="image/*">
 
-<input type="number" id="w" placeholder="Width (px)" value="300">
-<input type="number" id="h" placeholder="Height (px)" value="300">
-<input type="number" id="kb" placeholder="Max KB" value="100">
+<input id="w" type="number" value="300" placeholder="Width (px)">
+<input id="h" type="number" value="300" placeholder="Height (px)">
+<input id="kb" type="number" value="100" placeholder="Max KB">
+
+<small id="status">Loading AI model…</small>
 
 <canvas id="canvas"></canvas>
 
@@ -55,50 +43,69 @@ canvas{
 </div>
 
 <script>
-let img=new Image(), canvas=document.getElementById("canvas"), ctx=canvas.getContext("2d");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const img = new Image();
+let faceReady = false;
 
-document.getElementById("file").onchange=e=>{
-  let r=new FileReader();
-  r.onload=()=>{ img.src=r.result; };
+async function loadModels(){
+  const URL = "https://justadudewhohacks.github.io/face-api.js/models";
+  await faceapi.nets.tinyFaceDetector.loadFromUri(URL);
+  faceReady = true;
+  document.getElementById("status").innerText = "AI Ready";
+}
+loadModels();
+
+document.getElementById("file").onchange = e=>{
+  const r = new FileReader();
+  r.onload = ()=> img.src = r.result;
   r.readAsDataURL(e.target.files[0]);
 };
 
-function apply(){
+async function apply(){
   if(!img.src){ alert("Select image"); return; }
 
-  let w=+wInput.value||300;
-  let h=+hInput.value||300;
-
-  canvas.width=w;
-  canvas.height=h;
-
-  let ratio=Math.max(w/img.width,h/img.height);
-  let nw=img.width*ratio, nh=img.height*ratio;
-  let x=(w-nw)/2, y=(h-nh)/2;
+  const W = +w.value, H = +h.value;
+  canvas.width = W; canvas.height = H;
 
   ctx.fillStyle="#fff";
-  ctx.fillRect(0,0,w,h);
-  ctx.drawImage(img,x,y,nw,nh);
+  ctx.fillRect(0,0,W,H);
+
+  let sx=0, sy=0, sw=img.width, sh=img.height;
+
+  if(faceReady){
+    const det = await faceapi.detectSingleFace(
+      img,new faceapi.TinyFaceDetectorOptions()
+    );
+    if(det){
+      const b = det.box;
+      const pad = b.width*1.5;
+      sx = Math.max(0, b.x - pad/2);
+      sy = Math.max(0, b.y - pad/2);
+      sw = Math.min(img.width-sx, b.width+pad);
+      sh = Math.min(img.height-sy, b.height+pad);
+    }
+  }
+
+  const ratio = Math.max(W/sw, H/sh);
+  const dw = sw*ratio, dh = sh*ratio;
+  const dx = (W-dw)/2, dy = (H-dh)/2;
+
+  ctx.drawImage(img,sx,sy,sw,sh,dx,dy,dw,dh);
 }
 
 function download(){
-  let maxKB=+kbInput.value||100;
-  let q=0.95, data;
+  let maxKB = +kb.value, q = 0.95, data;
   do{
-    data=canvas.toDataURL("image/jpeg",q);
-    q-=0.03;
-  }while(data.length/1024>maxKB && q>0.5);
+    data = canvas.toDataURL("image/jpeg",q);
+    q -= 0.03;
+  }while(data.length/1024 > maxKB && q > 0.6);
 
-  let a=document.createElement("a");
-  a.href=data;
-  a.download="photo.jpg";
+  const a = document.createElement("a");
+  a.href = data;
+  a.download = "photo.jpg";
   a.click();
 }
-
-const wInput=document.getElementById("w");
-const hInput=document.getElementById("h");
-const kbInput=document.getElementById("kb");
 </script>
-
 </body>
 </html>
