@@ -2,107 +2,244 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Form Photoshop (Auto Face Detect)</title>
+<title>Tanvir Photo Resizer</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-
 <style>
-body{font-family:serif;background:#f2f2f2}
-.container{
-  max-width:420px;margin:20px auto;background:#fff;
-  padding:15px;border-radius:10px;
-  box-shadow:0 0 10px rgba(0,0,0,.15)
+*{box-sizing:border-box}
+body{
+  margin:0;
+  min-height:100vh;
+  background:radial-gradient(circle at top,#0b1f1a,#020a08 60%);
+  font-family:"Courier New", monospace;
+  color:#7CFFB2;
+  display:flex;
+  justify-content:center;
+  align-items:center;
 }
-h2{text-align:center}
-input,button{width:100%;padding:8px;margin:6px 0;font-size:16px}
-canvas{width:100%;border:1px solid #ccc;margin-top:10px}
-.buttons{display:flex;gap:10px}
-small{display:block;text-align:center;color:#666}
+.panel{
+  width:100%;
+  max-width:420px;
+  background:rgba(5,20,15,.9);
+  border-radius:18px;
+  padding:22px;
+  border:1px solid rgba(0,255,150,.3);
+  box-shadow:0 0 35px rgba(0,255,150,.25);
+}
+h1{text-align:center;font-size:20px;margin:10px 0 20px}
+label{display:block;margin-top:14px;font-size:13px}
+
+input,button{
+  width:100%;
+  padding:12px;
+  margin-top:6px;
+  background:#061612;
+  border:1px solid rgba(0,255,150,.35);
+  border-radius:12px;
+  color:#9fffd6;
+  font-family:inherit;
+}
+
+.sizeBox{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-top:8px;
+}
+.radio{
+  display:flex;
+  align-items:center;
+  gap:4px;
+  font-size:13px;
+}
+
+canvas{
+  width:100%;
+  margin-top:16px;
+  background:#02100c;
+  border:1px dashed rgba(0,255,150,.35);
+  border-radius:12px;
+  touch-action:none;
+}
+
+.row{
+  display:flex;
+  gap:10px;
+  margin-top:10px;
+}
+.row button{
+  flex:1;
+  background:transparent;
+  color:#39ff9f;
+  box-shadow:none;
+  border:1px solid rgba(0,255,150,.4);
+}
+
+button.main{
+  background:linear-gradient(180deg,#0cff9a,#00b870);
+  color:#002b18;
+  box-shadow:0 0 18px rgba(0,255,150,.6);
+}
 </style>
 </head>
 
 <body>
-<div class="container">
-<h2>Form Photoshop</h2>
+<div class="panel">
+  <h1>TANVIR PHOTO RESIZER</h1>
 
-<input type="file" id="file" accept="image/*">
+  <label>Select Image</label>
+  <input type="file" id="file" accept="image/*">
 
-<input id="w" type="number" value="300" placeholder="Width (px)">
-<input id="h" type="number" value="300" placeholder="Height (px)">
-<input id="kb" type="number" value="100" placeholder="Max KB">
+  <label>Width (px)</label>
+  <input type="number" id="w" value="300">
 
-<small id="status">Loading AI model…</small>
+  <label>Height (px)</label>
+  <input type="number" id="h" value="300">
 
-<canvas id="canvas"></canvas>
+  <label>Target JPG Size</label>
+  <div class="sizeBox">
+    <input type="number" id="targetSize" value="100">
+    <div class="radio"><input type="radio" name="unit" value="KB" checked> KB</div>
+    <div class="radio"><input type="radio" name="unit" value="MB"> MB</div>
+  </div>
 
-<div class="buttons">
-<button onclick="apply()">Apply & Preview</button>
-<button onclick="download()">Download</button>
-</div>
+  <canvas id="canvas"></canvas>
+
+  <div class="row">
+    <button onclick="removeBg()">REMOVE BG</button>
+    <button onclick="reset()">RESET</button>
+  </div>
+
+  <button class="main" onclick="apply()">APPLY & PREVIEW</button>
+  <button onclick="download()">DOWNLOAD</button>
 </div>
 
 <script>
+const API_KEY = "zaVQhQ2uiNYi3XHFTa5MiwGJ"; // demo only
+
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const img = new Image();
-let faceReady = false;
 
-async function loadModels(){
-  const URL = "https://justadudewhohacks.github.io/face-api.js/models";
-  await faceapi.nets.tinyFaceDetector.loadFromUri(URL);
-  faceReady = true;
-  document.getElementById("status").innerText = "AI Ready";
-}
-loadModels();
+let originalFile=null;
+let crop=null, drag=false, sx=0, sy=0;
 
-document.getElementById("file").onchange = e=>{
+file.onchange = e=>{
+  originalFile = e.target.files[0];
   const r = new FileReader();
   r.onload = ()=> img.src = r.result;
-  r.readAsDataURL(e.target.files[0]);
+  r.readAsDataURL(originalFile);
 };
 
-async function apply(){
-  if(!img.src){ alert("Select image"); return; }
+img.onload = ()=> reset();
 
-  const W = +w.value, H = +h.value;
-  canvas.width = W; canvas.height = H;
+function reset(){
+  crop = null;
+  apply(false);
+}
 
-  ctx.fillStyle="#fff";
+function getPos(e){
+  const r = canvas.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return {x: t.clientX - r.left, y: t.clientY - r.top};
+}
+
+canvas.onmousedown = canvas.ontouchstart = e=>{
+  const p = getPos(e);
+  sx = p.x; sy = p.y;
+  crop = {x:sx,y:sy,w:0,h:0};
+  drag = true;
+};
+canvas.onmousemove = canvas.ontouchmove = e=>{
+  if(!drag) return;
+  const p = getPos(e);
+  crop = {
+    x: Math.min(sx,p.x),
+    y: Math.min(sy,p.y),
+    w: Math.abs(p.x-sx),
+    h: Math.abs(p.y-sy)
+  };
+  redraw();
+};
+canvas.onmouseup = canvas.ontouchend = ()=> drag=false;
+
+function redraw(){
+  apply(false);
+  if(crop){
+    ctx.setLineDash([6,4]);
+    ctx.strokeStyle="#00ff99";
+    ctx.lineWidth=2;
+    ctx.strokeRect(crop.x,crop.y,crop.w,crop.h);
+    ctx.setLineDash([]);
+  }
+}
+
+function apply(useCrop=true){
+  if(!img.src) return;
+
+  const W = +w.value;
+  const H = +h.value;
+  canvas.width = W;
+  canvas.height = H;
+
+  // ✅ HIGH QUALITY RENDERING
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  // ✅ WHITE BACKGROUND
+  ctx.fillStyle="#ffffff";
   ctx.fillRect(0,0,W,H);
 
-  let sx=0, sy=0, sw=img.width, sh=img.height;
-
-  if(faceReady){
-    const det = await faceapi.detectSingleFace(
-      img,new faceapi.TinyFaceDetectorOptions()
-    );
-    if(det){
-      const b = det.box;
-      const pad = b.width*1.5;
-      sx = Math.max(0, b.x - pad/2);
-      sy = Math.max(0, b.y - pad/2);
-      sw = Math.min(img.width-sx, b.width+pad);
-      sh = Math.min(img.height-sy, b.height+pad);
-    }
+  let ix=0, iy=0, iw=img.width, ih=img.height;
+  if(crop && useCrop){
+    const rx=img.width/W, ry=img.height/H;
+    ix=crop.x*rx;
+    iy=crop.y*ry;
+    iw=crop.w*rx;
+    ih=crop.h*ry;
   }
 
-  const ratio = Math.max(W/sw, H/sh);
-  const dw = sw*ratio, dh = sh*ratio;
-  const dx = (W-dw)/2, dy = (H-dh)/2;
+  ctx.drawImage(img,ix,iy,iw,ih,0,0,W,H);
+}
 
-  ctx.drawImage(img,sx,sy,sw,sh,dx,dy,dw,dh);
+async function removeBg(){
+  if(!originalFile) return alert("Select image first");
+
+  const fd = new FormData();
+  fd.append("image_file", originalFile);
+  fd.append("size", "auto");
+
+  const res = await fetch("https://api.remove.bg/v1.0/removebg",{
+    method:"POST",
+    headers:{ "X-Api-Key": API_KEY },
+    body: fd
+  });
+
+  if(!res.ok) return alert("Remove BG failed");
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+
+  crop = null;          // ✅ re-enable crop
+  img.src = url;        // new editable image
 }
 
 function download(){
-  let maxKB = +kb.value, q = 0.95, data;
-  do{
-    data = canvas.toDataURL("image/jpeg",q);
-    q -= 0.03;
-  }while(data.length/1024 > maxKB && q > 0.6);
+  let target = +targetSize.value;
+  if(document.querySelector('input[name="unit"]:checked').value==="MB"){
+    target *= 1024;
+  }
 
-  const a = document.createElement("a");
-  a.href = data;
+  let lo=.3, hi=.98, best=null;
+  for(let i=0;i<20;i++){
+    const q=(lo+hi)/2;
+    const d=canvas.toDataURL("image/jpeg", Math.max(q,0.92));
+    if(d.length/1024>target) hi=q;
+    else{best=d; lo=q;}
+  }
+
+  const a=document.createElement("a");
+  a.href = best || canvas.toDataURL("image/jpeg",0.95);
   a.download = "photo.jpg";
   a.click();
 }
