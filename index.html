@@ -40,17 +40,36 @@ input,button{
   font-family:inherit;
 }
 
-.sizeBox{
-  display:flex;
-  align-items:center;
-  gap:10px;
-  margin-top:8px;
+/* ===== QUALITY ===== */
+.qualityTop{display:flex;justify-content:space-between}
+.qualityValue{color:#39ff9f;font-weight:bold}
+
+input[type=range]{
+  -webkit-appearance:none;
+  width:100%;
+  height:6px;
+  border-radius:6px;
+  background:linear-gradient(
+    to right,
+    #00ff99 0%,
+    #00ff99 var(--val,80%),
+    #1e3a32 var(--val,80%),
+    #1e3a32 100%
+  );
 }
-.radio{
-  display:flex;
-  align-items:center;
-  gap:4px;
-  font-size:13px;
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:20px;height:20px;border-radius:50%;
+  background:#00ff99;
+  box-shadow:0 0 12px rgba(0,255,153,.9);
+}
+
+.presetRow{display:flex;gap:8px;margin-top:8px}
+.presetRow button{flex:1;background:transparent}
+.presetRow button.active{
+  background:#00ff99;
+  color:#003b23;
+  box-shadow:0 0 12px rgba(0,255,153,.8);
 }
 
 canvas{
@@ -62,18 +81,8 @@ canvas{
   touch-action:none;
 }
 
-.row{
-  display:flex;
-  gap:10px;
-  margin-top:10px;
-}
-.row button{
-  flex:1;
-  background:transparent;
-  color:#39ff9f;
-  box-shadow:none;
-  border:1px solid rgba(0,255,150,.4);
-}
+.row{display:flex;gap:10px;margin-top:10px}
+.row button{flex:1;background:transparent}
 
 button.main{
   background:linear-gradient(180deg,#0cff9a,#00b870);
@@ -87,7 +96,6 @@ button.main{
 <div class="panel">
   <h1>TANVIR PHOTO RESIZER</h1>
 
-  <label>Select Image</label>
   <input type="file" id="file" accept="image/*">
 
   <label>Width (px)</label>
@@ -96,11 +104,16 @@ button.main{
   <label>Height (px)</label>
   <input type="number" id="h" value="300">
 
-  <label>Target JPG Size</label>
-  <div class="sizeBox">
-    <input type="number" id="targetSize" value="100">
-    <div class="radio"><input type="radio" name="unit" value="KB" checked> KB</div>
-    <div class="radio"><input type="radio" name="unit" value="MB"> MB</div>
+  <!-- QUALITY -->
+  <div class="qualityTop">
+    <span>Quality</span>
+    <span class="qualityValue"><span id="qVal">80</span>%</span>
+  </div>
+  <input type="range" id="quality" min="10" max="100" value="80">
+  <div class="presetRow">
+    <button onclick="setQuality(60)">LOW</button>
+    <button class="active" onclick="setQuality(80)">MEDIUM</button>
+    <button onclick="setQuality(95)">HIGH</button>
   </div>
 
   <canvas id="canvas"></canvas>
@@ -115,53 +128,74 @@ button.main{
 </div>
 
 <script>
-const API_KEY = "zaVQhQ2uiNYi3XHFTa5MiwGJ"; // demo only
-
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-const img = new Image();
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+const img=new Image();
 
 let originalFile=null;
 let crop=null, drag=false, sx=0, sy=0;
 
-file.onchange = e=>{
-  originalFile = e.target.files[0];
-  const r = new FileReader();
-  r.onload = ()=> img.src = r.result;
+const quality=document.getElementById("quality");
+const qVal=document.getElementById("qVal");
+const presets=document.querySelectorAll(".presetRow button");
+
+/* QUALITY */
+quality.oninput=()=>{
+  qVal.textContent=quality.value;
+  quality.style.setProperty("--val",quality.value+"%");
+  apply(false);
+};
+quality.dispatchEvent(new Event("input"));
+
+function setQuality(v){
+  quality.value=v;
+  presets.forEach(b=>b.classList.remove("active"));
+  event.target.classList.add("active");
+  quality.dispatchEvent(new Event("input"));
+}
+
+/* IMAGE LOAD */
+file.onchange=e=>{
+  originalFile=e.target.files[0];
+  const r=new FileReader();
+  r.onload=()=>img.src=r.result;
   r.readAsDataURL(originalFile);
 };
+img.onload=()=>reset();
 
-img.onload = ()=> reset();
-
+/* RESET */
 function reset(){
-  crop = null;
+  crop=null;
   apply(false);
 }
 
+/* CROP */
 function getPos(e){
-  const r = canvas.getBoundingClientRect();
-  const t = e.touches ? e.touches[0] : e;
-  return {x: t.clientX - r.left, y: t.clientY - r.top};
+  const r=canvas.getBoundingClientRect();
+  const t=e.touches?e.touches[0]:e;
+  return{x:t.clientX-r.left,y:t.clientY-r.top};
 }
 
-canvas.onmousedown = canvas.ontouchstart = e=>{
-  const p = getPos(e);
-  sx = p.x; sy = p.y;
-  crop = {x:sx,y:sy,w:0,h:0};
-  drag = true;
+canvas.onmousedown=canvas.ontouchstart=e=>{
+  const p=getPos(e);
+  sx=p.x; sy=p.y;
+  crop={x:sx,y:sy,w:0,h:0};
+  drag=true;
 };
-canvas.onmousemove = canvas.ontouchmove = e=>{
+
+canvas.onmousemove=canvas.ontouchmove=e=>{
   if(!drag) return;
-  const p = getPos(e);
-  crop = {
-    x: Math.min(sx,p.x),
-    y: Math.min(sy,p.y),
-    w: Math.abs(p.x-sx),
-    h: Math.abs(p.y-sy)
+  const p=getPos(e);
+  crop={
+    x:Math.min(sx,p.x),
+    y:Math.min(sy,p.y),
+    w:Math.abs(p.x-sx),
+    h:Math.abs(p.y-sy)
   };
   redraw();
 };
-canvas.onmouseup = canvas.ontouchend = ()=> drag=false;
+
+canvas.onmouseup=canvas.ontouchend=()=>drag=false;
 
 function redraw(){
   apply(false);
@@ -174,73 +208,40 @@ function redraw(){
   }
 }
 
+/* APPLY */
 function apply(useCrop=true){
   if(!img.src) return;
+  const W=+w.value, H=+h.value;
+  canvas.width=W; canvas.height=H;
 
-  const W = +w.value;
-  const H = +h.value;
-  canvas.width = W;
-  canvas.height = H;
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality="high";
 
-  // ✅ HIGH QUALITY RENDERING
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-
-  // ✅ WHITE BACKGROUND
-  ctx.fillStyle="#ffffff";
+  ctx.fillStyle="#fff";
   ctx.fillRect(0,0,W,H);
 
-  let ix=0, iy=0, iw=img.width, ih=img.height;
+  let ix=0,iy=0,iw=img.width,ih=img.height;
   if(crop && useCrop){
     const rx=img.width/W, ry=img.height/H;
-    ix=crop.x*rx;
-    iy=crop.y*ry;
-    iw=crop.w*rx;
-    ih=crop.h*ry;
+    ix=crop.x*rx; iy=crop.y*ry;
+    iw=crop.w*rx; ih=crop.h*ry;
   }
-
   ctx.drawImage(img,ix,iy,iw,ih,0,0,W,H);
 }
 
-async function removeBg(){
-  if(!originalFile) return alert("Select image first");
-
-  const fd = new FormData();
-  fd.append("image_file", originalFile);
-  fd.append("size", "auto");
-
-  const res = await fetch("https://api.remove.bg/v1.0/removebg",{
-    method:"POST",
-    headers:{ "X-Api-Key": API_KEY },
-    body: fd
-  });
-
-  if(!res.ok) return alert("Remove BG failed");
-
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-
-  crop = null;          // ✅ re-enable crop
-  img.src = url;        // new editable image
+/* REMOVE BG → PHOTOROOM */
+function removeBg(){
+  window.open(
+    "https://www.photoroom.com/tools/background-remover",
+    "_blank"
+  );
 }
 
+/* DOWNLOAD */
 function download(){
-  let target = +targetSize.value;
-  if(document.querySelector('input[name="unit"]:checked').value==="MB"){
-    target *= 1024;
-  }
-
-  let lo=.3, hi=.98, best=null;
-  for(let i=0;i<20;i++){
-    const q=(lo+hi)/2;
-    const d=canvas.toDataURL("image/jpeg", Math.max(q,0.92));
-    if(d.length/1024>target) hi=q;
-    else{best=d; lo=q;}
-  }
-
   const a=document.createElement("a");
-  a.href = best || canvas.toDataURL("image/jpeg",0.95);
-  a.download = "photo.jpg";
+  a.href=canvas.toDataURL("image/jpeg",quality.value/100);
+  a.download="photo.jpg";
   a.click();
 }
 </script>
